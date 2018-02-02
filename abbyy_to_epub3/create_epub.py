@@ -77,7 +77,7 @@ class ArchiveBookItem(object):
     book. Given a datanode and an `item_dir` of an Archive Book Item,
     all the constituent files for a book can be constructed using
     `item_identifier` and `item_bookpath` in the following ways:
-    
+
     - There is a single global metadata manifest file for the entire
       Archive Item named `{item_identifier}_meta.xml`.
     - All of the other book specific files follow the form
@@ -104,8 +104,8 @@ class ArchiveBookItem(object):
                 self.logger.debug("Invalid path to %s.%s: %s" % (name, ext, dependency))
                 raise OSError("Invalid path to %s.%s: %s" % (name, ext, dependency))
             setattr(self, '%s_%s' % (name, ext), dependency)
-    
-            
+
+
 class Ebook(ArchiveBookItem):
     """
     Ebook is a utility for generating epub3 files based on Archive.org items.
@@ -133,7 +133,7 @@ class Ebook(ArchiveBookItem):
     book = epub.EpubBook()  # the book itself
 
     def __init__(self, item_dir, item_identifier, item_bookpath, debug=False, args=False):
-        
+
         self.logger = logging.getLogger(__name__)
         if debug:
             self.logger.addHandler(logging.StreamHandler())
