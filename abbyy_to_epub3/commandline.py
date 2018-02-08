@@ -43,6 +43,12 @@ def main():
     parser.add_argument('item_identifier', help=usage)
     parser.add_argument('item_bookpath', help=usage)
     parser.add_argument(
+        '-o',
+        '--out',
+        default=None,
+        help='Output path for epub',
+    )
+    parser.add_argument(
         '--epubcheck',
         default=False,
         action='store_true',
@@ -68,7 +74,7 @@ def main():
             debug=debug,
             args=args,
         )
-        book.craft_epub()
+        book.craft_epub(epub_outfile=args.out or 'out.epub')
 
 if __name__ == "__main__":
     main()
