@@ -138,7 +138,7 @@ class Ebook(ArchiveBookItem):
         self.progression = ''  # page direction
         self.firsts = {}       # all first lines per-page
         self.lasts = {}        # all last lines per-page
-        self.pages = dict()    # page-by-page information from scandata
+        self.pages = OrderedDict()    # page-by-page information from scandata
 
         # are there headers, footers, or page numbers?
         self.headers_present = False
@@ -300,8 +300,34 @@ class Ebook(ArchiveBookItem):
         higher premium than disk space, so unzip the entire scan file into temp
         directory, instead of extracting only the needed images.
         """
-        cover_file = "{tmp}/{item_bookpath}_jp2/{item_bookpath}_0001.jp2".format(
-            tmp=self.tmpdir, item_bookpath=self.item_bookpath
+
+        # Try to find a cover image. If nothing is tagged as 'Cover', use
+        # the first page tagged 'Title'. If nothing is tagged as 'Title',
+        # either, use the first page tagged 'Normal'. Self.pages is an
+        # OrderedDict so break as soon as you find something useful, and don't
+        # search the whole set of pages.
+
+        pages_iter = iter(self.pages)
+        for p in pages_iter:
+            if self.pages[p] == 'cover':
+                cover_leaf = p
+                break
+            elif self.pages[p] == 'title':
+                cover_leaf = p
+                break
+            elif self.pages[p] == 'normal':
+                cover_leaf = p
+                break
+        try:
+            cover_leaf
+        except NameError:
+            e = "No pages in scandata marked as Cover, Title, or Normal"
+            self.logger.error(e)
+            raise RuntimeError(e)
+
+        # pad out the filename to four digits
+        cover_file = "{tmp}/{item_bookpath}_jp2/{item_bookpath}_{num:0>4}.jp2".format(
+            tmp=self.tmpdir, item_bookpath=self.item_bookpath, num=cover_leaf
         )
         try:
             with ZipFile(self.jp2_zip) as f:
@@ -314,7 +340,11 @@ class Ebook(ArchiveBookItem):
         # convert the JP2K file into a usable format for the cover
         f, e = os.path.splitext(os.path.basename(cover_file))
         imageobj = ImageFactory(self.image_processor)
-        imageobj.crop_image(cover_file, self.cover_img)
+        try:
+            imageobj.crop_image(cover_file, self.cover_img)
+        except RuntimeError as e:
+            # for failed image creation, keep processing the epub
+            self.logger.error(e)
 
     def image_dim(self, block):
         """
@@ -371,7 +401,12 @@ class Ebook(ArchiveBookItem):
 
         # make the image:
         imageobj = ImageFactory(self.image_processor)
-        imageobj.crop_image(origfile, outfile, dim=box, pagedim=pagedim)
+        try:
+            imageobj.crop_image(origfile, outfile, dim=box, pagedim=pagedim)
+        except RuntimeError as e:
+            # for failed image creation, keep processing the epub
+            self.logger.error(e)
+            return ''
         epubimage = epub.EpubImage()
         epubimage.file_name = in_epub_imagefile
         with open(outfile, 'rb') as f:
@@ -673,6 +708,8 @@ class Ebook(ArchiveBookItem):
         self.picnum = 1
         blocks_index = -1
         self.last_row = False
+        pagetype = ''
+        prev_pagetype = ''
 
         # Look for headers and page numbers
         # FR10 has markup but isn't reliable so look there as well
@@ -740,14 +777,23 @@ class Ebook(ArchiveBookItem):
         for block in self.blocks:
             blocks_index += 1
 
+            # Skip pages that  we don't want to include
             if 'type' not in block:
                 continue
+            # Get the pageType from scandata
             if (
                 'page_no' in block and
-                block['page_no'] in self.pages and
-                self.pages[block['page_no']] in skippable_pages
+                block['page_no'] in self.pages
             ):
+                prev_pagetype = pagetype
+                pagetype = self.pages[block['page_no']]
+            else:
+                # Treat it as Normal if it's not set
+                pagetype = 'Normal'
+            if pagetype in skippable_pages:
                 continue
+
+            # set the block style, if there is one
             if (
                 'style' in block and
                 'fontstyle' in block['style']
@@ -772,6 +818,23 @@ class Ebook(ArchiveBookItem):
                 )
             else:
                 fstyling = ''
+
+            # Make chapters for certain page types, for accessible navigation
+            pagetypes = {
+                'contents': 'Table of Contents',
+                'contributions': 'Contributions',
+                'copyright': 'Copyright Page',
+                'glossary': 'Glossary',
+                'index': 'Index',
+                'introduction': 'Introduction',
+                'preface': 'Preface',
+                'reference': 'Reference',
+                'title': 'Title Page',
+            }
+            if (pagetype in pagetypes and pagetype != prev_pagetype):
+                chapter_no += 1
+                chapter = self.make_chapter(pagetypes[pagetype], chapter_no)
+
             if block['type'] == 'Text':
                 text = block['text']
                 role = block['role']
@@ -870,7 +933,10 @@ class Ebook(ArchiveBookItem):
                     chapter.content += ebooklib_utils.create_pagebreak(
                         str(block['text'])
                     )
-            elif block['type'] == 'Picture':
+            elif (
+                block['type'] == 'Picture' and
+                pagetype != 'Cover'
+            ):
                 # Image
                 content = self.make_image(block)
                 if content:
@@ -930,11 +996,11 @@ class Ebook(ArchiveBookItem):
                     for line in infile:
                         outfile.write(line)
 
-            # Extract the page images and create the cover file
-            self.extract_images()
-
             # read in the page-by-page scandata file
             self.load_scandata_pages()
+
+            # Extract the page images and create the cover file
+            self.extract_images()
 
             # parse the ABBYY
             parser = AbbyyParser(

@@ -44,5 +44,12 @@ class ScandataParser(object):
         pagelist = self.tree.findall("./pageData/page")
         for page in pagelist:
             num = page.get('leafNum')
-            pagetype = page.find('pageType').text
+            # In case contributors use inconsistent case, lowercase pageType
+            pagetype = page.find('pageType').text.lower()
+            # Instead of complicating the data structure and adding extra logic
+            # on each block, just use a custom pagetype for anything where
+            # "addToAccessFormats" is set to false.
+            access_formats = page.find('addToAccessFormats').text.lower()
+            if access_formats == 'false':
+                pagetype = "skippable"
             self.pages[int(num)] = pagetype
