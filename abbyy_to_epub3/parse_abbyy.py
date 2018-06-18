@@ -220,14 +220,14 @@ class AbbyyParser(object):
         # if the language code is invalid, assume English
         # language might be ISO 639-6, ISO 639-2/B, ISO 639-2/T, or ISO 639-1
         # (in pycountry, called: name, alpha_3, bibliographic, and alpha_2)
-        if 'language' not in self.metadata:
+        if 'language' not in self.metadata or not self.metadata['language']:
             self.metadata['language'] = ['en']
         else:
             lang_code = self.metadata['language'][0]
             try:
                 lang = pycountry.languages.lookup(lang_code)
                 self.metadata['language'][0] = lang.alpha_2
-            except LookupError:
+            except (LookupError, AttributeError):
                 self.logger.debug(
                     "Invalid language code {}. Setting to English".format(
                         lang_code
